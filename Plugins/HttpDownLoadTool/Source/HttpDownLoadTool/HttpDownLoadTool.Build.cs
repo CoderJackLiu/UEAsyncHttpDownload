@@ -41,6 +41,8 @@ public class HttpDownLoadTool : ModuleRules
 				"HTTP",
 				"DeveloperSettings",
 				"Json",
+				"PakFile",
+				"InputCore"
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);

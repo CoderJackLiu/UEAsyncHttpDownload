@@ -160,8 +160,8 @@ void UHttpMgrSubsystem::ExecDownloadTasks()
 				NumActiveTask++;
 				break;
 			case ETaskState::_Succees:
-
 				DownloadHttpFiles.Remove(HttpFile);
+				--i;
 				break;
 			case ETaskState::_Retry:
 				if (HttpFile->TryCount <= MaxTryCount)
@@ -207,13 +207,18 @@ void UHttpMgrSubsystem::NotifyFailed(UAsyncDownloadFile *HttpFile, bool bForceFa
 void UHttpMgrSubsystem::NotifyFinised(UAsyncDownloadFile *HttpFile)
 {
 	ExecDownloadTasks();
-	ClearMgr();
+	if(DownloadHttpFiles.Contains(HttpFile))
+	{
+		DownloadHttpFiles.Remove(HttpFile);
+	}
+	//ClearMgr();
 }
 
 void UHttpMgrSubsystem::ClearMgr()
 {
 	for (int32 i = DownloadHttpFiles.Num() - 1; i >= 0; --i)
 	{
+		DownloadHttpFiles[i]->RemoveFromRoot();
 		DownloadHttpFiles.RemoveAt(i);
 		continue;
 	}

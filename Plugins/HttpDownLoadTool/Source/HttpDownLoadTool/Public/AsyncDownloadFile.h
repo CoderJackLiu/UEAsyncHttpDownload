@@ -21,6 +21,7 @@ enum class ETaskState : uint8
 };
 class UHttpMgrSubsystem;
 UCLASS()
+//class UAsyncDownloadFile :public UBlueprintAsyncActionBase
 class UAsyncDownloadFile :public UBlueprintAsyncActionBase
 {
 	GENERATED_UCLASS_BODY()
@@ -57,6 +58,7 @@ protected:
 	
 	
 	void StartSubTaskDownload(TSharedRef<FSubHttpTask> SubHttpTask);
+	//void StartSubTaskDownload(FSubHttpTask*  SubHttpTask);
 	void HandleDownload(FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bSucceeded,int32 TaskID);
 	void UpdateProgress();
 
@@ -90,6 +92,7 @@ private:
 	 * 保持文件
 	 */
 	bool SaveToFile();
+	
 	/**
 	* 发生错误
 	*/
@@ -109,7 +112,8 @@ public:
 
 	UPROPERTY(BlueprintAssignable)
 	FHttpDownloadDelegate OnCancel;
-
+	
+	void OnGetFileMd5(const FString& Md5);
 protected:
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "HttpDownloader")
 	ETaskState				State;//任务状态
@@ -145,4 +149,5 @@ protected:
 	TSharedPtr<IHttpRequest> FileSizeRequest;
 	TSharedPtr<IHttpRequest> FileDataRequest;
 	TArray<TSharedPtr<FSubHttpTask>>	SubTasks;
+	//TArray<FSubHttpTask*>	SubTasks;
 };

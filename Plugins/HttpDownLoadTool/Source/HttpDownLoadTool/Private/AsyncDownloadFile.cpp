@@ -3,6 +3,7 @@
 #include "Engine/GameInstance.h"
 #include "HttpMgrSubsystem.h"
 #include "HttpModule.h"
+#include "MergeDownloadFileTask.h"
 #include "Kismet/BlueprintPathsLibrary.h"
 
 UAsyncDownloadFile::UAsyncDownloadFile(class FObjectInitializer const & Obj)
@@ -107,7 +108,7 @@ void UAsyncDownloadFile::HandleResponseFileSize(FHttpRequestPtr HttpRequest, FHt
 	}
 }
 
-void UAsyncDownloadFile::StartSubTaskDownload(TSharedRef<FSubHttpTask> SubHttpTask)
+void UAsyncDownloadFile::StartSubTaskDownload(TSharedRef<FSubHttpTask>/* FSubHttpTask* */SubHttpTask)
 {
 	TSharedPtr<IHttpRequest> pRequset = SubHttpTask->CreateRequest();
 	pRequset->OnProcessRequestComplete().BindUObject(this, &UAsyncDownloadFile::HandleDownload, SubHttpTask->TaskID);
@@ -117,6 +118,7 @@ void UAsyncDownloadFile::StartSubTaskDownload(TSharedRef<FSubHttpTask> SubHttpTa
 void UAsyncDownloadFile::HandleDownload(FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bSucceeded, int32 TaskID)
 {
 	TSharedRef<FSubHttpTask> SubTask = SubTasks[TaskID].ToSharedRef();;
+	//FSubHttpTask* SubTask = SubTasks[TaskID];
 	WaitResponse--;
 	if (HttpResponse.IsValid() && bSucceeded)
 	{
@@ -232,10 +234,11 @@ void UAsyncDownloadFile::CreateSubTask()
 	}
 	while (StartSize < TotalFileSize)
 	{
-		TSharedPtr<FSubHttpTask> SubHttpTask;
 		int32 TempSize = 0;
 		FString TempRange;
+		TSharedPtr<FSubHttpTask> SubHttpTask;
 		SubHttpTask = MakeShareable(new FSubHttpTask);//创建子任务
+		//FSubHttpTask* SubHttpTask = new FSubHttpTask();//创建子任务
 		SubHttpTask->TaskID = TaskID;
 		SubHttpTask->URL = Url;
 		SubHttpTask->MD5Str = MD5Str;
@@ -260,7 +263,8 @@ void UAsyncDownloadFile::CreateSubTask()
 		}
 
 		ensureMsgf(TempSize > 0, TEXT("SubTask Size Is Null!"));
-		if (SubHttpTask.IsValid())
+		//if (SubHttpTask.IsValid())
+		if (SubHttpTask)
 		{
 			SubHttpTask->Size = TempSize;
 			SubHttpTask->Range = TempRange;
@@ -292,6 +296,7 @@ void UAsyncDownloadFile::UpdateTask()
 		for (int32 i = 0; i < SubTasks.Num(); ++i)
 		{
 			TSharedRef<FSubHttpTask> SubTask = SubTasks[i].ToSharedRef();
+			//FSubHttpTask* SubTask = SubTasks[i];
 			if (!SubTask->bFinished && !SubTask->bWaitResponse)
 			{
 				WaitResponse++;
@@ -304,6 +309,8 @@ void UAsyncDownloadFile::UpdateTask()
 
 void UAsyncDownloadFile::OnFinished()
 {
+	SaveToFile();
+	return;
 	if( SaveToFile())
 	{
 		State = ETaskState::_Succees;
@@ -334,6 +341,7 @@ void UAsyncDownloadFile::CheckDeadTask(double CurTime)
 		for (int32 i = 0; i < SubTasks.Num(); ++i)
 		{
 			TSharedRef<FSubHttpTask> Task = SubTasks[i].ToSharedRef();
+			//FSubHttpTask* Task = SubTasks[i];
 			if (!Task->bFinished&&Task->bWaitResponse)
 			{
 				float TimeOut = CurTime - Task->RequestTime;
@@ -358,15 +366,47 @@ bool UAsyncDownloadFile::SaveToFile()
 		{
 			TSharedRef<FSubHttpTask> Task = SubTasks[i].ToSharedRef();
 			Wirter->Serialize(Task->RawData.GetData(), Task->RawData.Num());
-			TotalFileData.Append(Task->RawData);
+			//TotalFileData.Append(Task->RawData);
 		}
 		Wirter->Close();
-	}
 
-	FString Md5 = FMD5::HashBytes(TotalFileData.GetData(),TotalFileData.Num());
+		FAutoDeleteAsyncTask<FMergeDownloadFileTask>* Md5Task = new FAutoDeleteAsyncTask<FMergeDownloadFileTask>(FilePath,this);
+		Md5Task->StartBackgroundTask();
+		
+		// MD5不区分大小写，这里都转成大写比较
+		//bool bEqual = Md5.ToUpper().Equals(FileDataMD5Str.ToUpper());
+		
+		//return bEqual;
+
+	}
+	return false;
+}
+
+void UAsyncDownloadFile::OnGetFileMd5(const FString& Md5)
+{
 	// MD5不区分大小写，这里都转成大写比较
 	bool bEqual = Md5.ToUpper().Equals(FileDataMD5Str.ToUpper());
-	return bEqual;
+
+	if( bEqual)
+	{
+		State = ETaskState::_Succees;
+		if (OnSuccess.IsBound())
+		{
+			OnSuccess.Broadcast(FileName, Progress);
+			Mgr->NotifyFinised(this);
+
+		}
+		if (bClearCache)
+		{
+			//删除缓存文件
+			IPlatformFile& PlatFileModule = FPlatformFileManager::Get().GetPlatformFile();
+			PlatFileModule.DeleteDirectoryRecursively(*(Mgr->CurFilePath / MD5Str));
+		}
+	}
+	else
+	{
+		FatalErr(FString::Printf(TEXT("%s md5不匹配"),*FileName));
+	}
 }
 
 void UAsyncDownloadFile::FatalErr(const FString &ErrString)
